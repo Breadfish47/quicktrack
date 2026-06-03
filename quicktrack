@@ -3,7 +3,6 @@
 from subprocess import call
 from pathlib import Path
 import json
-import os
 import shutil
 import sys
 
@@ -20,49 +19,55 @@ With no ALIAS, show available games.
   -h, --help      show this help dialog
 
 Quicktrack {}, Breadfish47""".format(version))
-    exit(0)
+    sys.exit(0)
 
 # Establish script directory to retrieve config file
-dir = Path(__file__).resolve().parent
-configPath = os.path.join(dir, "config.json")
+script_dir = Path(__file__).resolve().parent
+config_path = script_dir / "config.json"
 
 try:
-    with open(configPath, "r") as file:
+    with config_path.open() as file:
         config = json.load(file)
 except FileNotFoundError:
-  print("Error: Config file not found")
+    print("Error: Config file not found")
+    sys.exit(1)
 except json.JSONDecodeError:
-  print("Error: Invalid JSON in config file")
+    print("Error: Invalid JSON in config file")
+    sys.exit(1)
 
-def printGames():
+def print_games():
     print("Quicktrack {}".format(version))
     for game in config["games"]:
         print("-- {} / alias {}\n".format(game["name"], game["alias"]))
+# Expand steam_path into full proton prefix DLL check
+def proton_path(steam_path, appid):
+    return Path(steam_path).expanduser() / "compatdata" / appid / "pfx" / "drive_c" / "windows" / "system32"
 
-def injectTrack(alias):
-    steamPath = config["steamPath"]
-    if os.path.isdir(os.path.expanduser(steamPath)) == False:
-        print("Error: steamPath invalid")
-        exit(1)
-
+def inject_track(alias):
+    # Check each game's alias, if no match return None
     game = next((game for game in config["games"] if game["alias"] == alias), None)
     if game is None:
       print("Error: Alias not in config.json")
-      exit(1)
+      sys.exit(1)
+    # Check each steamPath location, if game not found return None
+    game_path = None
+    for location in config["steamPaths"]:
+        possible_path = proton_path(location, game["appid"])
+        if possible_path.is_dir():
+            game_path = possible_path
+            print("Using steamPath {}".format(game_path))
+            break
+    if game_path is None:
+        print("Error: game not found at listed steamPath(s)")
+        sys.exit(1)
+    if not (game_path / "icuuc.dll").is_file():
+        print("Inserting icuuc.dll for opentrack compatibility...")
+        shutil.copyfile(script_dir / "icuuc.dll", game_path / "icuuc.dll")
 
-    gamePath = os.path.expanduser(os.path.join(steamPath, "compatdata", game["appid"], "pfx/drive_c/windows/system32"))
-    if os.path.exists(gamePath):
-        if not os.path.isfile(os.path.join(gamePath, "icuuc.dll")):
-            print("Inserting icuuc.dll for opentrack compatibility...")
-            shutil.copyfile("icuuc.dll", os.path.join(gamePath, "icuuc.dll"))
-
-        call("protontricks-launch --appid {} {}".format(game["appid"], os.path.join(dir, "install", "opentrack.exe")), shell=True)
-        exit()
-    else:
-        print("Error: Game directory not found:\n {}".format(gamePath))
-        exit(1)
+    call("protontricks-launch --appid {} {}".format(game["appid"], script_dir / "install" / "opentrack.exe"), shell=True)
+    sys.exit(0)
 
 if len(sys.argv) == 2:
-  injectTrack(sys.argv[1])
+  inject_track(sys.argv[1])
 else:
-    printGames()
+    print_games()

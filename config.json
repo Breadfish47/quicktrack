@@ -1,5 +1,5 @@
 {
-  "steamPath": "~/.steam/steam/steamapps/",
+  "steamPaths": ["~/.steam/steam/steamapps/"],
   "games": [
     {
       "name": "IL-2 Sturmovik",
